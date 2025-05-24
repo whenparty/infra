@@ -1,0 +1,9 @@
+version: '3.9'
+
+services:
+  www:
+    image: ghcr.io/whenparty/www:latest
+    container_name: www
+    ports:
+      - "8080:80"
+    restart: unless-stopped

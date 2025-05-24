@@ -1,0 +1,26 @@
+name: Sync Infrastructure Files
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docker-compose.yml"
+
+jobs:
+  sync-files:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Copy files to VPS
+        uses: appleboy/scp-action@v0.1.5
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_DEPLOY_KEY }}
+          source: "docker-compose.yml"
+          target: "~/projects/infra/"
+          rm: false
