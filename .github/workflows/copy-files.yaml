@@ -6,12 +6,27 @@ on:
       - main
     paths:
       - "docker-compose.yml"
+      - "nginx/**"
 
 jobs:
   sync-files:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check certs on VPS
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_DEPLOY_KEY }}
+          script: |
+            if [ -f ~/projects/infra/nginx/certs/nii.au.crt ] && [ -f ~/projects/infra/nginx/certs/nii.au.key ]; then
+                echo "Certificates found."
+            else
+                echo "ERROR: Certificates missing!" >&2
+                exit 1
+            fi
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -21,6 +36,6 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_DEPLOY_KEY }}
-          source: "docker-compose.yml"
+          source: "docker-compose.yml,nginx"
           target: "~/projects/infra/"
           rm: false

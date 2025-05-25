@@ -1,9 +1,17 @@
-version: '3.9'
-
 services:
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: unless-stopped
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - www
   www:
     image: ghcr.io/whenparty/www:latest
     container_name: www
-    ports:
-      - "8080:80"
     restart: unless-stopped

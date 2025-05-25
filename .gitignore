@@ -1,0 +1,12 @@
+.env
+
+certs/
+nginx/certs/
+keys/
+*.crt
+*.key
+
+docker-compose.override.yml
+
+.vscode/
+
