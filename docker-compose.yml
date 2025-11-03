@@ -1,6 +1,6 @@
 services:
   nginx:
-    image: nginx:alpine
+    image: nginx:1.27-alpine
     container_name: nginx
     restart: unless-stopped
     volumes:
@@ -9,18 +9,14 @@ services:
     ports:
       - "80:80"
       - "443:443"
-    depends_on:
-      - www
     networks:
-      - wgnet
-
-  www:
-    image: ghcr.io/whenparty/www:latest
-    container_name: www
-    restart: unless-stopped
-    networks:
-      - wgnet
+      - web_network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
 
 networks:
-  wgnet:
+  web_network:
     external: true
