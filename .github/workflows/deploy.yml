@@ -32,6 +32,8 @@ jobs:
           script: |
             set -euo pipefail
             cd /opt/services/whenparty/infra
+            docker network inspect wp_www >/dev/null 2>&1 || docker network create wp_www
+            docker network inspect wp_tempsites >/dev/null 2>&1 || docker network create wp_tempsites
             docker compose pull
             docker compose up -d
             docker exec nginx nginx -t

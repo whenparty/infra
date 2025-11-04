@@ -10,7 +10,8 @@ services:
       - "80:80"
       - "443:443"
     networks:
-      - web_network
+      - wp_www
+      - wp_tempsites
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
@@ -18,5 +19,7 @@ services:
       retries: 3
 
 networks:
-  web_network:
+  wp_www:
+    external: true
+  wp_tempsites:
     external: true
