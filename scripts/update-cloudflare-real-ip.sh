@@ -37,8 +37,8 @@ fetch_ips() {
   echo "" >>"$TMP_FILE"
 }
 
-fetch_ips 4
-fetch_ips 6
+fetch_ips "v4"
+fetch_ips "v6"
 
 changed=1
 if [ -f "$TARGET_FILE" ] && cmp -s "$TMP_FILE" "$TARGET_FILE"; then
