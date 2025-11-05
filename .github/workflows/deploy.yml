@@ -3,9 +3,8 @@ name: Deploy Infrastructure
 on:
   push:
     branches: [main]
-    paths:
-      - "docker-compose.yml"
-      - "nginx/**"
+    paths-ignore: 
+      - "*.md"
 
 jobs:
   deploy:
@@ -20,7 +19,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_DEPLOY_KEY }}
-          source: "docker-compose.yml,nginx/conf.d"
+          source: "docker-compose.yml,nginx/conf.d,scripts"
           target: "/opt/services/whenparty/infra/"
 
       - name: Deploy
@@ -34,6 +33,7 @@ jobs:
             cd /opt/services/whenparty/infra
             docker network inspect wp_www >/dev/null 2>&1 || docker network create wp_www
             docker network inspect wp_tempsites >/dev/null 2>&1 || docker network create wp_tempsites
+            chmod +x scripts/*.sh
             docker compose pull
             docker compose up -d
             docker exec nginx nginx -t
