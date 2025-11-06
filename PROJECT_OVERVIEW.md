@@ -15,7 +15,7 @@
 whenparty-infra/         # Nginx proxy only
 whenparty-www/           # Main website
 whenparty-telegram-bot/  # Bot + PostgreSQL (TODO: migrate)
-whenparty-temp-sites/    # Temporary subdomains at *.temp.nii.au
+whenparty-temp-sites/    # Temporary subdomains at *.when.party
 ```
 
 ## 1. One-Time VPS Setup
@@ -23,7 +23,9 @@ whenparty-temp-sites/    # Temporary subdomains at *.temp.nii.au
 ### A. Generate Cloudflare Origin Certificate
 
 1. Go to Cloudflare Dashboard → SSL/TLS → Origin Server
-2. Create Certificate with hostnames: `nii.au`, `*.nii.au`, `*.temp.nii.au`
+2. Create certificates with hostnames:
+   - `nii.au`, `*.nii.au` (stable services)
+   - `when.party`, `*.when.party` (temp sites wildcard)
 3. Choose 15 years validity
 4. Save certificate and private key
 
@@ -34,12 +36,12 @@ whenparty-temp-sites/    # Temporary subdomains at *.temp.nii.au
 # Run once as root on VPS
 
 # Create deployment user
-useradd -m -s /bin/bash whenpartydeploy
-usermod -aG docker whenpartydeploy
+useradd -m -s /bin/bash user
+usermod -aG docker user
 
 # Create directory structure
 mkdir -p /opt/services/whenparty/{infra,www,telegram-bot,tempsites}
-chown -R whenpartydeploy:whenpartydeploy /opt/services
+chown -R user:group /opt/services
 
 # Create Docker networks
 docker network create web_network
@@ -54,14 +56,14 @@ cd /opt/services/whenparty/infra/nginx/certs
 nano nii.au.crt  # Paste certificate
 nano nii.au.key  # Paste private key
 
-# Temp sites certificate (*.temp.nii.au)
-nano temp.nii.au.crt  # Paste certificate
-nano temp.nii.au.key  # Paste private key
+# Temp sites certificate (*.when.party)
+nano when.party.crt  # Paste certificate
+nano when.party.key  # Paste private key
 
 # Set permissions
-chmod 600 nii.au.key temp.nii.au.key
-chmod 644 nii.au.crt temp.nii.au.crt
-chown -R whenpartydeploy:whenpartydeploy /opt/services/whenparty
+chmod 600 nii.au.key when.party.key
+chmod 644 nii.au.crt when.party.crt
+chown -R user:group /opt/services/whenparty
 ```
 
 ### C. Cloudflare Dashboard Settings
@@ -74,7 +76,7 @@ SSL/TLS:
 
 DNS: A    @         YOUR_VPS_IP    Proxied ☁️
   A    www       YOUR_VPS_IP    Proxied ☁️
-  A    *.temp    YOUR_VPS_IP    Proxied ☁️
+  A    *         YOUR_VPS_IP    Proxied ☁️
 ```
 
 ## 2. Infrastructure Repository
@@ -96,7 +98,15 @@ services:
     networks:
       - web_network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost/health",
+        ]
       interval: 30s
       timeout: 3s
       retries: 3
@@ -372,12 +382,12 @@ This architecture provides:
 │   │   ├── certs/
 │   │   │   ├── nii.au.crt         # Cloudflare Origin cert for nii.au, *.nii.au
 │   │   │   ├── nii.au.key
-│   │   │   ├── temp.nii.au.crt    # Cloudflare Origin cert for *.temp.nii.au
-│   │   │   └── temp.nii.au.key
+│   │   │   ├── when.party.crt    # Cloudflare Origin cert for *.when.party
+│   │   │   └── when.party.key
 │   │   └── conf.d/
 │   │       ├── default.conf       # Core: HTTP redirect, health check
 │   │       ├── www.conf           # Copied from whenparty-www (includes apex redirect)
-│   │       └── temp-sites.conf    # Wildcard routing for *.temp.nii.au → Traefik
+│   │       └── temp-sites.conf    # Wildcard routing for *.when.party → Traefik
 │   └── .github/workflows/deploy.yml
 │
 ├── www/                            # Website service (stable)
@@ -392,9 +402,9 @@ This architecture provides:
                                     # No git, no local files - just pulls images
 ```
 
-## 5. Temp Sites Architecture (`*.temp.nii.au`)
+## 5. Temp Sites Architecture (`*.when.party`)
 
-The temp-sites system provides a clean, low-friction way to deploy disposable web applications at `*.temp.nii.au` using **image-based deployment** with Traefik-based dynamic routing.
+The temp-sites system provides a clean, low-friction way to deploy disposable web applications at `*.when.party` using **image-based deployment** with Traefik-based dynamic routing.
 
 ### Architecture Overview
 
@@ -406,7 +416,7 @@ Internet → Cloudflare → Nginx (TLS) → Traefik (HTTP) → Project Container
 **Key Design Decisions:**
 
 1. **Image-Based Deployment**: No git on VPS - everything deployed as Docker images from GHCR (public)
-2. **Separate Certificate**: Uses dedicated Cloudflare Origin cert for `*.temp.nii.au` (separate from `nii.au`)
+2. **Separate Certificate**: Uses dedicated Cloudflare Origin cert for `*.when.party` (separate from `nii.au`)
 3. **Isolated Network**: Temp sites use `tempsites` Docker network (isolated from `web_network`)
 4. **Traefik Routing**: Dynamic routing via Docker labels - no nginx config churn
 5. **TLS at Nginx**: Nginx terminates TLS; Traefik is HTTP-only (simpler, no ACME complexity)
@@ -416,17 +426,20 @@ Internet → Cloudflare → Nginx (TLS) → Traefik (HTTP) → Project Container
 ### How It Works
 
 1. **Nginx Wildcard Config** (`temp-sites.conf`):
-   - Catches all requests to `*.temp.nii.au`
-   - Terminates TLS with `temp.nii.au.crt`
+
+   - Catches all requests to `*.when.party`
+   - Terminates TLS with `when.party.crt`
    - Proxies to Traefik on `localhost:8000`
 
 2. **Traefik Router**:
+
    - Runs from generated `docker-compose.yml` on VPS
    - HTTP-only on port 8000 (localhost)
    - Docker provider discovers project containers via labels
-   - Routes by Host header (`project-name.temp.nii.au`)
+   - Routes by Host header (`project-name.when.party`)
 
 3. **Project Images** (GitHub Actions):
+
    - Each project in `projects/<name>/` must have a `Dockerfile`
    - GitHub Actions builds images for changed projects
    - Images pushed to GHCR as public packages: `ghcr.io/org/temp-<project>:latest`
@@ -459,7 +472,7 @@ cat > projects/my-site/site/index.html << 'EOF'
 <!DOCTYPE html>
 <html>
 <head><title>My Site</title></head>
-<body><h1>Hello from my-site.temp.nii.au</h1></body>
+<body><h1>Hello from my-site.when.party</h1></body>
 </html>
 EOF
 
@@ -470,13 +483,14 @@ git push origin main
 ```
 
 **What happens:**
+
 1. GitHub Actions detects `projects/my-site/` changed
 2. Builds Docker image from Dockerfile
 3. Pushes to `ghcr.io/org/temp-my-site:latest` (public)
 4. Generates `docker-compose.yml` with all projects (including my-site)
 5. SCPs compose file to VPS
 6. VPS runs `docker compose pull && up -d`
-7. Traefik routes `my-site.temp.nii.au` → container
+7. Traefik routes `my-site.when.party` → container
 8. Site is live!
 
 **Custom Application Example:**
@@ -530,20 +544,20 @@ When you push changes to `projects/`:
 
 ### Benefits vs. Per-Service Nginx Configs
 
-| Traditional (nginx per-service) | Temp Sites (Traefik) |
-|--------------------------------|----------------------|
-| Edit nginx config per project | Add Traefik labels in compose |
-| Commit to infra repo | Commit to temp-sites repo |
-| Reload nginx | Automatic discovery |
-| 1 file per service | 1 label block per service |
-| Good for stable services | Perfect for disposable projects |
+| Traditional (nginx per-service) | Temp Sites (Traefik)            |
+| ------------------------------- | ------------------------------- |
+| Edit nginx config per project   | Add Traefik labels in compose   |
+| Commit to infra repo            | Commit to temp-sites repo       |
+| Reload nginx                    | Automatic discovery             |
+| 1 file per service              | 1 label block per service       |
+| Good for stable services        | Perfect for disposable projects |
 
 ### Network Isolation
 
 ```
 web_network (stable services)     tempsites (temp projects)
 ├── nginx ←────┐                 ├── traefik-tempsites
-├── www        │                 ├── dtm-cleaning-web
+├── www        │                 ├── dtm-cleaning
 └── telegram-bot                 └── my-project
                │
                └─ Nginx listens on both networks via ports
@@ -556,29 +570,33 @@ web_network (stable services)     tempsites (temp projects)
 ### Traefik Labels Reference
 
 **Basic routing:**
+
 ```yaml
 labels:
-  - 'traefik.enable=true'
-  - 'traefik.http.routers.NAME.rule=Host(`subdomain.temp.nii.au`)'
-  - 'traefik.http.routers.NAME.entrypoints=web'
-  - 'traefik.http.services.NAME.loadbalancer.server.port=PORT'
+  - "traefik.enable=true"
+  - "traefik.http.routers.NAME.rule=Host(`subdomain.when.party`)"
+  - "traefik.http.routers.NAME.entrypoints=web"
+  - "traefik.http.services.NAME.loadbalancer.server.port=PORT"
 ```
 
 **Multiple domains:**
+
 ```yaml
 labels:
-  - 'traefik.http.routers.NAME.rule=Host(`app1.temp.nii.au`) || Host(`app2.temp.nii.au`)'
+  - "traefik.http.routers.NAME.rule=Host(`app1.when.party`) || Host(`app2.when.party`)"
 ```
 
 **Path-based routing:**
+
 ```yaml
 labels:
-  - 'traefik.http.routers.NAME.rule=Host(`app.temp.nii.au`) && PathPrefix(`/api`)'
+  - "traefik.http.routers.NAME.rule=Host(`app.when.party`) && PathPrefix(`/api`)"
 ```
 
 ### Troubleshooting
 
 1. **Site not accessible:**
+
    ```bash
    # On VPS
    cd /opt/services/whenparty/tempsites
@@ -596,10 +614,11 @@ labels:
    docker compose logs my-project
 
    # Test Traefik routing locally
-   curl -H "Host: my-project.temp.nii.au" http://localhost:8000
+   curl -H "Host: my-project.when.party" http://localhost:8000
    ```
 
 2. **Image not found:**
+
    ```bash
    # Verify image exists on GHCR
    # Visit: https://github.com/orgs/<org>/packages?repo_name=temp-sites
@@ -611,12 +630,14 @@ labels:
    ```
 
 3. **Certificate errors:**
+
    ```bash
-   # Verify cert covers *.temp.nii.au
-   openssl x509 -in /opt/services/whenparty/infra/nginx/certs/temp.nii.au.crt -text | grep DNS
+   # Verify cert covers *.when.party
+   openssl x509 -in /opt/services/whenparty/infra/nginx/certs/when.party.crt -text | grep DNS
    ```
 
 4. **Routing not working:**
+
    ```bash
    # Check Traefik discovered container
    docker logs traefik-tempsites | grep my-project
@@ -634,7 +655,7 @@ For complete documentation, see: `whenparty-temp-sites/README.md`
 
 ```yaml
 VPS_HOST: your.vps.ip
-VPS_USER: whenpartydeploy
+VPS_USER: user
 VPS_DEPLOY_KEY: |
   -----BEGIN OPENSSH PRIVATE KEY-----
   [your SSH private key]
@@ -649,7 +670,7 @@ GHCR_READ_TOKEN: ghp_xxxx # Personal Access Token with read:packages
 # Run on VPS to migrate from current setup
 
 # Stop current services
-cd /home/whenpartydeploy/projects/infra
+cd /home/user/projects/infra
 docker compose down
 
 # Move certificates
